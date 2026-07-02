@@ -9,9 +9,27 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 import pykakasi
 
-st.set_page_config(page_title="ふりがな自動付与", page_icon="🈺", layout="wide")
-st.title("🈺 ふりがな自動付与")
-st.markdown("Wordファイルをアップロードすると、漢字部分にふりがな（ルビ）を自動で付与します。")
+st.set_page_config(page_title="ふりがな自動付与", page_icon="📝", layout="centered")
+
+st.markdown("""
+<style>
+    .block-container { max-width: 760px; padding-top: 2rem; }
+    h1 { font-size: 1.8rem !important; font-weight: 700; }
+    .step-label {
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: #888;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 0.2rem;
+    }
+    .section-divider { border: none; border-top: 1px solid #eee; margin: 1.5rem 0; }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("## 📝 ふりがな自動付与")
+st.markdown("Word ファイルをアップロードすると、漢字にふりがな（ルビ）を自動で付与します。")
+st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
 _kks = pykakasi.kakasi()
 
@@ -206,7 +224,8 @@ def build_preview_html(docx_bytes: bytes, overrides: dict) -> str:
 
 # ── UI ──────────────────────────────────────────────────────────────
 
-uploaded = st.file_uploader("Wordファイルをアップロード (.docx)", type=["docx"])
+st.markdown('<div class="step-label">Step 1 &nbsp;／&nbsp; ファイルを選択</div>', unsafe_allow_html=True)
+uploaded = st.file_uploader("Word ファイル（.docx）をアップロード", type=["docx"], label_visibility="collapsed")
 
 if uploaded:
     file_bytes = uploaded.read()
@@ -214,21 +233,26 @@ if uploaded:
     if 'furigana_source' not in st.session_state or st.session_state.furigana_source != uploaded.name:
         st.session_state.furigana_source = uploaded.name
         st.session_state.furigana_readings = None
+        st.session_state.pop('furigana_preview_html', None)
 
-    st.success(f"アップロード完了：{uploaded.name}")
+    st.caption(f"選択中：{uploaded.name}")
+    st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
-    if st.button("ふりがなを解析する", type="primary"):
+    st.markdown('<div class="step-label">Step 2 &nbsp;／&nbsp; 解析</div>', unsafe_allow_html=True)
+    if st.button("ふりがなを解析する", type="primary", use_container_width=True):
         with st.spinner("解析中..."):
             readings = extract_readings(file_bytes)
         st.session_state.furigana_readings = readings
         st.session_state.furigana_file_bytes = file_bytes
+        st.session_state.pop('furigana_preview_html', None)
 
 if st.session_state.get('furigana_readings'):
     readings: dict = st.session_state.furigana_readings
     src_bytes: bytes = st.session_state.furigana_file_bytes
 
-    st.markdown("### ふりがな一覧・修正")
-    st.caption("辞書ベース（pykakasi）で自動検出した読みです。間違いがあればふりがな欄を直接編集してください。")
+    st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+    st.markdown('<div class="step-label">Step 3 &nbsp;／&nbsp; 読みを確認・修正</div>', unsafe_allow_html=True)
+    st.caption(f"辞書で自動検出した読みです。間違いがあれば直接編集できます。（{len(readings)} 語）")
 
     df = pd.DataFrame(
         [{'漢字': k, 'ふりがな': v} for k, v in readings.items()]
@@ -238,8 +262,8 @@ if st.session_state.get('furigana_readings'):
         use_container_width=True,
         num_rows="fixed",
         column_config={
-            '漢字': st.column_config.TextColumn('漢字', disabled=True),
-            'ふりがな': st.column_config.TextColumn('ふりがな（編集可）'),
+            '漢字': st.column_config.TextColumn('漢字', disabled=True, width="medium"),
+            'ふりがな': st.column_config.TextColumn('ふりがな（編集可）', width="medium"),
         },
         height=min(400, 45 + len(df) * 35),
         key="furigana_editor",
@@ -247,20 +271,23 @@ if st.session_state.get('furigana_readings'):
 
     overrides = dict(zip(edited['漢字'], edited['ふりがな']))
 
-    col1, col2 = st.columns([1, 3])
+    st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+    st.markdown('<div class="step-label">Step 4 &nbsp;／&nbsp; プレビューと出力</div>', unsafe_allow_html=True)
+
+    col1, col2 = st.columns(2)
     with col1:
-        preview_clicked = st.button("🔍 プレビュー更新", use_container_width=True)
+        preview_clicked = st.button("プレビューを表示", use_container_width=True)
     with col2:
-        generate_clicked = st.button("📄 Wordを生成してダウンロード", type="primary", use_container_width=True)
+        generate_clicked = st.button("Word を生成してダウンロード", type="primary", use_container_width=True)
 
     if preview_clicked or 'furigana_preview_html' in st.session_state:
         if preview_clicked:
             st.session_state.furigana_preview_html = build_preview_html(src_bytes, overrides)
-        st.markdown("### プレビュー")
+        st.markdown("**プレビュー**")
         st.html(st.session_state.furigana_preview_html)
 
     if generate_clicked:
-        with st.spinner("Word生成中..."):
+        with st.spinner("Word 生成中..."):
             try:
                 result_bytes = add_furigana(src_bytes, overrides)
             except Exception as e:
@@ -276,4 +303,5 @@ if st.session_state.get('furigana_readings'):
             data=result_bytes,
             file_name=out_name,
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            use_container_width=True,
         )
